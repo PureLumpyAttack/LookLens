@@ -2,7 +2,7 @@
 
 **See it, scan it, wear it.**
 
-LookLens is a hackathon project about _empowering women_. In specific, pushing back on the financially exploitative side of the beauty industry. LookLens lets you upload a photo, pick a look, and see an AI-generated preview of that makeup on _you_ — before a single product hits your cart. The goal: fewer impulse buys, fewer half-used palettes in a drawer, more confident choices about what's actually worth your money.
+LookLens is a hackathon project about _empowering women_. In specific, pushing back on the financially exploitative side of the beauty industry. LookLens lets you upload a photo/take a photo of makeup, and see an AI-generated preview of that makeup on _you_ — before a single product hits your cart.
 
 ## How it works
 
