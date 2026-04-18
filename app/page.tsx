@@ -102,12 +102,15 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-2">
             <Show when="signed-out">
-              <SignInButton>
+              <SignInButton signUpForceRedirectUrl="/dashboard">
                 <button className="text-xs font-medium text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 px-3 py-1.5 rounded-md transition-colors">
                   Sign in
                 </button>
               </SignInButton>
-              <SignUpButton>
+              <SignUpButton
+                fallbackRedirectUrl="/dashboard"
+                forceRedirectUrl="/dashboard"
+              >
                 <button className="text-xs font-medium text-zinc-950 bg-zinc-50 hover:bg-zinc-200 px-4 py-1.5 rounded-md transition-colors h-8">
                   Sign up
                 </button>
@@ -132,7 +135,10 @@ export default function Home() {
           product, find dupes, and shop within your budget.
         </p>
         <div className="flex gap-3 justify-center flex-wrap mb-16">
-          <SignUpButton>
+          <SignUpButton
+            fallbackRedirectUrl="/dashboard"
+            forceRedirectUrl="/dashboard"
+          >
             <button className="text-sm font-medium text-zinc-950 bg-zinc-50 hover:bg-zinc-200 px-5 py-2.5 rounded-lg transition-colors h-10">
               Get started free →
             </button>
