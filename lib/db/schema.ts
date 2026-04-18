@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  boolean,
   json,
   pgEnum,
   pgTable,
@@ -54,9 +55,11 @@ export const makeupTemplates = pgTable("makeupTemplates", {
       onUpdate: "cascade",
     }),
   status: makeupTemplateStatusEnum().default("processing").notNull(),
-  generatedPreviewPhoto: varchar({ length: 255 }),
+  name: varchar({ length: 200 }),
+  generatedPreviewPhoto: text(),
   inferredCost: real(),
   rating: real(),
+  saved: boolean().default(false).notNull(),
   makeupInstructions: text(),
   products: json(), // TODO: migrate to dedicated db table
   createdAt: timestamp({ withTimezone: true }).defaultNow().notNull(),

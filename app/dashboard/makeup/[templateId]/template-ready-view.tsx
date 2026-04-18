@@ -1,25 +1,68 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Star } from "lucide-react";
+import { toast } from "sonner";
+import { rateTemplate, saveTemplate } from "./server";
+
+type Product = {
+  id: string;
+  name: string;
+  price: string;
+};
 
 export function TemplateReadyView({
   templateId,
+  name,
+  previewImageUrl,
+  products,
+  steps,
+  initialRating,
 }: {
   templateId: string;
+  name: string;
+  previewImageUrl: string | null;
+  products: Product[];
+  steps: string[];
+  initialRating: number;
 }) {
-  const [rating, setRating] = useState(4);
+  const router = useRouter();
+  const [rating, setRating] = useState(initialRating);
+  const [isPending, startTransition] = useTransition();
 
-  const name = "Natural Glow";
-  const products = [
-    { id: "p1", name: "makeup 1", price: "2$" },
-    { id: "p2", name: "makeup 1", price: "2$" },
-  ];
-  const steps = ["blah", "blah", "blah"];
+  const handleRatingChange = (value: number) => {
+    const previous = rating;
+    setRating(value);
+
+    startTransition(async () => {
+      try {
+        await rateTemplate({ templateId, rating: value });
+      } catch (error) {
+        console.error(error);
+        setRating(previous);
+        toast.error("Couldn't update rating.");
+      }
+    });
+  };
+
+  const handleSave = () => {
+    startTransition(async () => {
+      try {
+        await saveTemplate({ templateId });
+        toast.success("Saved to your looks.");
+        router.push("/dashboard");
+        router.refresh();
+      } catch (error) {
+        console.error(error);
+        toast.error("Couldn't save this look.");
+      }
+    });
+  };
 
   return (
     <div
@@ -27,11 +70,17 @@ export function TemplateReadyView({
       data-template-id={templateId}
     >
       <div className="relative bg-muted">
-        <img
-          src="https://blocks.astratic.com/img/general-img-square.png"
-          alt="Preview"
-          className="absolute inset-0 h-full w-full object-cover"
-        />
+        {previewImageUrl ? (
+          <img
+            src={previewImageUrl}
+            alt={`${name} preview`}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">
+            Preview unavailable
+          </div>
+        )}
       </div>
 
       <div className="flex flex-col">
@@ -39,29 +88,33 @@ export function TemplateReadyView({
           <div className="flex max-w-md flex-col gap-6">
             <h1 className="font-heading text-2xl font-bold">{name}</h1>
 
-            <div className="grid grid-cols-2 gap-3">
-              {products.map((product) => (
-                <Card key={product.id} size="sm" className="gap-0 py-0">
-                  <div className="aspect-square bg-muted" />
-                  <Separator />
-                  <CardContent className="py-3 text-center">
-                    <p className="text-sm font-medium">{product.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {product.price}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <p className="text-base font-medium">to do this you do:</p>
-              <ol className="list-decimal space-y-1 pl-5 text-sm">
-                {steps.map((step, i) => (
-                  <li key={i}>{step}</li>
+            {products.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3">
+                {products.map((product) => (
+                  <Card key={product.id} size="sm" className="gap-0 py-0">
+                    <div className="aspect-square bg-muted" />
+                    <Separator />
+                    <CardContent className="py-3 text-center">
+                      <p className="text-sm font-medium">{product.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {product.price}
+                      </p>
+                    </CardContent>
+                  </Card>
                 ))}
-              </ol>
-            </div>
+              </div>
+            ) : null}
+
+            {steps.length > 0 ? (
+              <div className="flex flex-col gap-2">
+                <p className="text-base font-medium">to do this you do:</p>
+                <ol className="list-decimal space-y-1 pl-5 text-sm">
+                  {steps.map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -75,8 +128,9 @@ export function TemplateReadyView({
                 <button
                   key={i}
                   type="button"
-                  onClick={() => setRating(i + 1)}
-                  className="transition hover:scale-110"
+                  onClick={() => handleRatingChange(i + 1)}
+                  disabled={isPending}
+                  className="transition hover:scale-110 disabled:opacity-60"
                 >
                   <Star
                     className={cn(
@@ -90,7 +144,13 @@ export function TemplateReadyView({
               ))}
             </div>
           </div>
-          <Button variant="outline">Save</Button>
+          <Button
+            variant="outline"
+            onClick={handleSave}
+            disabled={isPending}
+          >
+            {isPending ? "Saving..." : "Save"}
+          </Button>
         </div>
       </div>
     </div>

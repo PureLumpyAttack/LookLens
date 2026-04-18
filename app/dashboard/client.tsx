@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import Webcam from "react-webcam";
 import { RawCamera } from "@/components/raw-camera";
@@ -43,6 +44,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { uploadFiles } from "@/lib/uploadthing";
+import { toast } from "sonner";
+import { createProcessingTemplate, deleteSavedTemplate } from "./server";
+import type { SavedMakeupView } from "./data";
+
+function dataUrlToFile(dataUrl: string, fileName: string) {
+  const [meta, content] = dataUrl.split(",");
+
+  if (!meta || !content) {
+    throw new Error("Invalid screenshot payload");
+  }
+
+  const mimeMatch = meta.match(/data:(.*?);base64/);
+  const mime = mimeMatch?.[1] ?? "image/jpeg";
+  const bytes = Uint8Array.from(atob(content), (char) => char.charCodeAt(0));
+
+  return new File([bytes], fileName, { type: mime });
+}
 
 function useIsMobile(breakpoint = 768) {
   const [isMobile, setIsMobile] = useState(false);
@@ -65,21 +84,138 @@ function useIsMobile(breakpoint = 768) {
   return isMobile;
 }
 
-export default function DashboardPage() {
+export default function DashboardPage({
+  savedMakeups,
+}: {
+  savedMakeups: SavedMakeupView[];
+}) {
   const cameraRef = useRef<Webcam>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [cameraAttempt, setCameraAttempt] = useState(0);
+  const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
+  const [selectedPhotoPreview, setSelectedPhotoPreview] = useState<
+    string | null
+  >(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const { user } = useUser();
   const isMobile = useIsMobile();
-  const savedMakeups = [
-    {
-      id: "natural-glow",
-      name: "Natural Glow",
-      rating: "4/5 stars",
-      price: "$67",
-    },
-  ];
+  const router = useRouter();
+
+  const handleDeleteMakeup = async (templateId: string) => {
+    try {
+      await deleteSavedTemplate({ templateId });
+      toast.success("Deleted.");
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+      toast.error("Couldn't delete this look.");
+    }
+  };
+
+  const handleOpenMakeup = (templateId: string) => {
+    router.push(`/dashboard/makeup/${templateId}`);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (selectedPhotoPreview?.startsWith("blob:")) {
+        URL.revokeObjectURL(selectedPhotoPreview);
+      }
+    };
+  }, [selectedPhotoPreview]);
+
+  const clearSelectedPhoto = () => {
+    if (selectedPhotoPreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(selectedPhotoPreview);
+    }
+
+    setSelectedPhotoFile(null);
+    setSelectedPhotoPreview(null);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleCapturePhoto = () => {
+    const screenshot = cameraRef.current?.getScreenshot();
+
+    if (!screenshot) {
+      return;
+    }
+
+    if (selectedPhotoPreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(selectedPhotoPreview);
+    }
+
+    const file = dataUrlToFile(screenshot, `looklens-camera-${Date.now()}.jpg`);
+
+    setSelectedPhotoFile(file);
+    setSelectedPhotoPreview(screenshot);
+  };
+
+  const handleImportPhoto = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (selectedPhotoPreview?.startsWith("blob:")) {
+      URL.revokeObjectURL(selectedPhotoPreview);
+    }
+
+    setSelectedPhotoFile(file);
+    setSelectedPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const handleConfirmPhoto = async () => {
+    if (!selectedPhotoFile || isSubmitting) {
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const processingTemplatePromise = (async () => {
+        const uploadedFiles = await uploadFiles("userPhotoUploader", {
+          files: [selectedPhotoFile],
+        });
+
+        const uploadedFile = uploadedFiles?.[0];
+        const uploadedFileUrl =
+          uploadedFile?.serverData?.ufsUrl ?? uploadedFile?.ufsUrl;
+
+        if (!uploadedFileUrl) {
+          throw new Error("Upload did not return a file URL");
+        }
+
+        return createProcessingTemplate({
+          sourcePhotoUrl: uploadedFileUrl,
+          sourcePhotoKey: uploadedFile.key ?? null,
+        });
+      })();
+
+      toast.promise(processingTemplatePromise, {
+        loading: "Starting your makeup analysis...",
+        success: (processingTemplate) => {
+          router.push(
+            `/dashboard/makeup/${processingTemplate.templateId}/processing`,
+          );
+          router.refresh();
+
+          return "Processing started.";
+        },
+        error: "We couldn't start processing.",
+      });
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <main className="relative min-h-dvh overflow-hidden bg-black">
@@ -106,6 +242,14 @@ export default function DashboardPage() {
         </AlertDialog>
       )}
 
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleImportPhoto}
+      />
+
       <div className="absolute right-5 top-5 z-10 flex flex-row items-center justify-center gap-3 rounded-xl border bg-secondary px-4 py-2 text-secondary-foreground">
         <div>
           <p>{user?.firstName}</p>
@@ -114,38 +258,75 @@ export default function DashboardPage() {
       </div>
 
       <div className="absolute inset-0 overflow-hidden bg-black">
-        <RawCamera
-          ref={cameraRef}
-          key={cameraAttempt}
-          className="size-full object-cover"
-          videoConstraints={isMobile ? { aspectRatio: 9 / 16 } : undefined}
-          onUserMedia={() => {
-            setPermissionDenied(false);
-          }}
-          onUserMediaError={(error) => {
-            if (typeof error === "string") {
-              console.log(error);
-              return;
-            }
+        {selectedPhotoPreview ? (
+          <img
+            src={selectedPhotoPreview}
+            alt="Selected makeup reference"
+            className="size-full object-cover"
+          />
+        ) : (
+          <RawCamera
+            ref={cameraRef}
+            key={cameraAttempt}
+            className="size-full object-cover"
+            videoConstraints={isMobile ? { aspectRatio: 9 / 16 } : undefined}
+            onUserMedia={() => {
+              setPermissionDenied(false);
+            }}
+            onUserMediaError={(error) => {
+              if (typeof error === "string") {
+                console.log(error);
+                return;
+              }
 
-            if (
-              error.name === "NotAllowedError" ||
-              error.name === "PermissionDeniedError"
-            ) {
-              setPermissionDenied(true);
-            }
-          }}
-        />
+              if (
+                error.name === "NotAllowedError" ||
+                error.name === "PermissionDeniedError"
+              ) {
+                setPermissionDenied(true);
+              }
+            }}
+          />
+        )}
       </div>
 
       <div className="absolute bottom-8 z-10 flex w-full items-center justify-center gap-3">
         <div className="flex flex-row gap-4">
-          <Button size={"lg"} className="h-14 w-14 rounded-2xl">
+          <Button
+            size={"lg"}
+            className="h-14 w-14 rounded-2xl"
+            onClick={() => fileInputRef.current?.click()}
+          >
             <ImageUp className="size-6" />
           </Button>
-          <Button size={"lg"} className="h-14 px-8 rounded-2xl text-base">
-            Take Picture
-          </Button>
+          {selectedPhotoPreview ? (
+            <>
+              <Button
+                size={"lg"}
+                variant="secondary"
+                className="h-14 px-8 rounded-2xl text-base"
+                onClick={clearSelectedPhoto}
+              >
+                Retake
+              </Button>
+              <Button
+                size={"lg"}
+                className="h-14 px-8 rounded-2xl text-base"
+                disabled={!selectedPhotoFile || isSubmitting}
+                onClick={handleConfirmPhoto}
+              >
+                {isSubmitting ? "Confirming..." : "Confirm"}
+              </Button>
+            </>
+          ) : (
+            <Button
+              size={"lg"}
+              className="h-14 px-8 rounded-2xl text-base"
+              onClick={handleCapturePhoto}
+            >
+              Take Picture
+            </Button>
+          )}
           <ResponsiveSheet mobileDirection="bottom">
             <ResponsiveSheetTrigger asChild>
               <Button size={"lg"} className="h-14 w-14 rounded-2xl">
@@ -165,15 +346,30 @@ export default function DashboardPage() {
               </ResponsiveSheetHeader>
 
               <div className="flex flex-1 flex-col gap-4 px-4 pb-4">
+                {savedMakeups.length === 0 ? (
+                  <p className="px-2 py-6 text-center text-sm text-muted-foreground">
+                    You haven&apos;t saved any looks yet.
+                  </p>
+                ) : null}
                 {savedMakeups.map((makeup) => (
                   <div key={makeup.id} className="relative">
-                    <Card className="gap-0 py-0 border">
+                    <Card
+                      className="gap-0 py-0 border cursor-pointer"
+                      onClick={() => handleOpenMakeup(makeup.id)}
+                    >
                       <CardContent className="grid min-h-28 grid-cols-[96px_1px_minmax(0,1fr)] px-0">
-                        <div className="text-sm text-muted-foreground">
-                          <img
-                            src={""}
-                            className="w-full h-full object-cover"
-                          />
+                        <div className="overflow-hidden text-sm text-muted-foreground">
+                          {makeup.previewImageUrl ? (
+                            <img
+                              src={makeup.previewImageUrl}
+                              alt={`${makeup.name} preview`}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center bg-muted text-xs">
+                              No preview
+                            </div>
+                          )}
                         </div>
                         <Separator orientation="vertical" />
                         <div className="flex items-center justify-between gap-4 p-4">
@@ -187,7 +383,7 @@ export default function DashboardPage() {
                                   key={i}
                                   className={cn(
                                     "size-4",
-                                    i < parseInt(makeup.rating)
+                                    i < makeup.rating
                                       ? "fill-yellow-400 text-yellow-400"
                                       : "fill-muted text-muted",
                                   )}
@@ -196,7 +392,10 @@ export default function DashboardPage() {
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-2">
+                          <div
+                            className="flex items-center gap-2"
+                            onClick={(event) => event.stopPropagation()}
+                          >
                             <p className="text-lg font-medium text-foreground">
                               {makeup.price}
                             </p>
@@ -226,11 +425,18 @@ export default function DashboardPage() {
                                   <DropdownMenuLabel>
                                     Managing
                                   </DropdownMenuLabel>
-                                  <DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onSelect={() => handleOpenMakeup(makeup.id)}
+                                  >
                                     <Edit />
                                     Edit
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem variant="destructive">
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    onSelect={() =>
+                                      handleDeleteMakeup(makeup.id)
+                                    }
+                                  >
                                     <Trash />
                                     Delete
                                   </DropdownMenuItem>

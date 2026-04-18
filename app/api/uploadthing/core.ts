@@ -25,7 +25,7 @@ export const fileRouter = {
         uploadedBy: metadata.userId,
         key: file.key,
         name: file.name,
-        url: file.ufsUrl,
+        ufsUrl: file.ufsUrl,
       };
     }),
 } satisfies FileRouter;
