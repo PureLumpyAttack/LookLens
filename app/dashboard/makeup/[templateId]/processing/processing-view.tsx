@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import katex from "katex";
 import { cn } from "@/lib/utils";
 import { Spinner } from "@/components/ui/spinner";
-import { Separator } from "@/components/ui/separator";
 import {
   CheckIcon,
   ChevronDownIcon,
@@ -14,7 +14,6 @@ import {
   SearchIcon,
   ShieldAlertIcon,
   SparklesIcon,
-  SquareTerminalIcon,
   XIcon,
 } from "lucide-react";
 
@@ -55,7 +54,9 @@ export function ProcessingView({
   const [revealedByActivity, setRevealedByActivity] = useState<
     Record<string, number>
   >({});
-  const [showThinking, setShowThinking] = useState(true);
+  const [collapsedActivities, setCollapsedActivities] = useState<
+    Record<string, boolean>
+  >({});
 
   useEffect(() => {
     setDisplayImage(displayImageUrl);
@@ -203,6 +204,13 @@ export function ProcessingView({
     [activityState],
   );
 
+  const toggleActivity = (id: string) => {
+    setCollapsedActivities((current) => ({
+      ...current,
+      [id]: !current[id],
+    }));
+  };
+
   return (
     <div className="grid min-h-svh lg:grid-cols-[minmax(0,0.88fr)_minmax(0,1.12fr)]">
       <div className="flex flex-col gap-4 border-r border-border/60 p-6 md:p-10 lg:sticky lg:top-0 lg:h-svh">
@@ -231,13 +239,23 @@ export function ProcessingView({
           </div>
 
           <div className="w-full max-w-sm space-y-3 text-center">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <span className="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/60 px-3 py-1 text-xs text-muted-foreground">
+                <EyeIcon className="size-3.5" />
+                {activeActivity
+                  ? `${activeActivity.title} is thinking...`
+                  : jobState === "queued"
+                    ? "Warming up your agent pipeline"
+                    : "Finalizing your result"}
+              </span>
+            </div>
             <h1 className="flex flex-wrap items-center justify-center gap-2 text-2xl font-bold md:text-3xl">
               <Spinner className="size-6" />
               <span>Processing {templateName}</span>
             </h1>
             <p className="text-sm leading-6 text-muted-foreground">
-              We’re tracing the full research and rebuttal workflow, then
-              building your preview and final application steps.
+              Our systems are determining the source, origin, health risks and
+              most cost efficient way to apply the makeup.
             </p>
           </div>
         </div>
@@ -247,23 +265,11 @@ export function ProcessingView({
         <div className="mx-auto flex max-w-3xl flex-col gap-6">
           <div className="overflow-hidden rounded-[1.75rem] border border-border/70 bg-background/60 shadow-[0_20px_80px_-40px_rgba(0,0,0,0.75)] backdrop-blur">
             <div className="flex items-center justify-between border-b border-border/70 px-5 py-4">
-              <div className="flex items-center gap-3">
-                <div className="flex items-center gap-4">
-                  <div className="hidden h-5 w-px bg-border/70 sm:block" />
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-2 text-sm text-muted-foreground transition hover:text-foreground"
-                    onClick={() => setShowThinking((value) => !value)}
-                  >
-                    {showThinking ? "Hide thinking" : "Show thinking"}
-                    <ChevronDownIcon
-                      className={cn(
-                        "size-4 transition",
-                        showThinking && "rotate-180",
-                      )}
-                    />
-                  </button>
-                </div>
+              <div>
+                <h2 className="text-lg font-medium">Activity</h2>
+                <p className="text-sm text-muted-foreground">
+                  Live trace of the agents working on your look.
+                </p>
               </div>
               <div className="flex items-center gap-2 rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs text-muted-foreground">
                 {jobState === "processing" ? (
@@ -278,35 +284,35 @@ export function ProcessingView({
             </div>
 
             <div className="px-5 py-5">
-              <div className="flex items-start justify-between gap-6">
-                <div>
-                  <h2 className="text-lg font-medium">Activity</h2>
-                  <p className="text-sm text-muted-foreground">
-                    Live trace of the agents working on your look.
-                  </p>
-                </div>
-              </div>
+              <ol className="relative flex flex-col gap-4 pl-10">
+                {activityState.map((activity) => {
+                  const isCollapsed = collapsedActivities[activity.id] ?? false;
+                  const visibleCount = revealedByActivity[activity.id] ?? 0;
+                  const hasMessages =
+                    activity.status !== "pending" &&
+                    activity.payload.length > 0;
 
-              <Separator className="my-5" />
-
-              <ol className="relative flex flex-col gap-6 pl-10">
-                {activityState.map((activity) => (
-                  <TimelineItem
-                    key={activity.id}
-                    status={mapTimelineStatus(activity.status)}
-                    icon={getActivityIcon(activity.kind)}
-                    title={activity.title}
-                    subtitle={activity.description ?? undefined}
-                  >
-                    {showThinking ? (
-                      <ReasoningSurface
-                        items={activity.payload}
-                        status={activity.status}
-                        visibleCount={revealedByActivity[activity.id] ?? 0}
-                      />
-                    ) : null}
-                  </TimelineItem>
-                ))}
+                  return (
+                    <TimelineItem
+                      key={activity.id}
+                      status={mapTimelineStatus(activity.status)}
+                      icon={getActivityIcon(activity.kind)}
+                      title={activity.title}
+                      subtitle={activity.description ?? undefined}
+                      collapsible={hasMessages}
+                      collapsed={isCollapsed}
+                      onToggle={() => toggleActivity(activity.id)}
+                    >
+                      {!isCollapsed && hasMessages ? (
+                        <ChatThread
+                          items={activity.payload}
+                          status={activity.status}
+                          visibleCount={visibleCount}
+                        />
+                      ) : null}
+                    </TimelineItem>
+                  );
+                })}
               </ol>
             </div>
           </div>
@@ -345,12 +351,18 @@ function TimelineItem({
   icon,
   title,
   subtitle,
+  collapsible,
+  collapsed,
+  onToggle,
   children,
 }: {
   status: TimelineStatus;
   icon: React.ReactNode;
   title: string;
   subtitle?: string;
+  collapsible: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
   children?: React.ReactNode;
 }) {
   return (
@@ -378,23 +390,41 @@ function TimelineItem({
       </span>
 
       <div className="space-y-3">
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-muted-foreground">{icon}</span>
-            <p
-              className={cn(
-                "text-sm font-medium",
-                status === "pending" && "text-muted-foreground",
-                status === "failed" && "text-destructive",
-              )}
-            >
-              {title}
-            </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-muted-foreground">{icon}</span>
+              <p
+                className={cn(
+                  "text-sm font-medium",
+                  status === "pending" && "text-muted-foreground",
+                  status === "failed" && "text-destructive",
+                )}
+              >
+                {title}
+              </p>
+            </div>
+            {subtitle ? (
+              <p className="text-sm leading-6 text-muted-foreground">
+                {subtitle}
+              </p>
+            ) : null}
           </div>
-          {subtitle ? (
-            <p className="text-sm leading-6 text-muted-foreground">
-              {subtitle}
-            </p>
+
+          {collapsible ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground transition hover:text-foreground"
+            >
+              {collapsed ? "Show" : "Hide"}
+              <ChevronDownIcon
+                className={cn(
+                  "size-3.5 transition",
+                  !collapsed && "rotate-180",
+                )}
+              />
+            </button>
           ) : null}
         </div>
 
@@ -404,7 +434,7 @@ function TimelineItem({
   );
 }
 
-function ReasoningSurface({
+function ChatThread({
   items,
   status,
   visibleCount,
@@ -427,85 +457,51 @@ function ReasoningSurface({
     item.label.startsWith("source."),
   );
   const isStreaming = status === "running";
-  const shouldShowPlaceholder =
-    status === "pending" || (isStreaming && visibleItems.length === 0);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/70 bg-background/55">
-      <div className="border-b border-border/60 px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span className="inline-flex size-2 rounded-full bg-primary/80" />
-            {status === "pending"
-              ? "Queued analysis"
-              : isStreaming
-                ? "Thinking..."
-                : status === "failed"
-                  ? "Analysis failed"
-                  : "Thought"}
-          </div>
-          {isStreaming ? (
-            <div className="inline-flex items-center gap-2 rounded-full bg-primary/8 px-2.5 py-1 text-[11px] text-primary">
-              <Spinner className="size-3" />
-              Thinking
-            </div>
-          ) : null}
-        </div>
-      </div>
+    <div className="flex flex-col gap-3">
+      {stableItems.map((item, index) => (
+        <ChatMessage
+          key={`${item.label}-${item.detail}-${index}`}
+          label={item.label}
+          detail={item.detail}
+        />
+      ))}
 
-      <div className="space-y-3 p-4">
-        {liveItems.map((item, index) => (
-          <ReasoningCard
-            key={`${item.label}-${index}`}
-            label={item.label}
-            detail={item.detail}
-            live
-          />
-        ))}
+      {liveItems.map((item, index) => (
+        <ChatMessage
+          key={`${item.label}-${index}`}
+          label={item.label}
+          detail={item.detail}
+          live
+        />
+      ))}
 
-        {stableItems.map((item, index) => (
-          <ReasoningCard
-            key={`${item.label}-${item.detail}-${index}`}
-            label={item.label}
-            detail={item.detail}
-          />
-        ))}
+      {sourceItems.length > 0 ? <SourcesSurface items={sourceItems} /> : null}
 
-        {sourceItems.length > 0 ? <SourcesSurface items={sourceItems} /> : null}
-
-        {shouldShowPlaceholder ? <ThinkingSkeleton /> : null}
-
-        {isStreaming && visibleItems.length > 0 ? (
-          <ThinkingSkeleton compact />
-        ) : null}
-      </div>
+      {isStreaming && liveItems.length === 0 ? <ThinkingSkeleton /> : null}
     </div>
   );
 }
 
-function SourcesSurface({ items }: { items: ActivityPayloadItem[] }) {
+function ThinkingSkeleton() {
   return (
-    <div className="border-l border-border/80 pl-4">
-      <div className="mb-3 flex items-center gap-2">
-        <div className="flex size-6 items-center justify-center rounded-full bg-muted text-muted-foreground">
-          <SearchIcon className="size-3.5" />
-        </div>
-        <p className="text-base font-medium">Sources</p>
-      </div>
-
-      <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
-        {items.map((item, index) => (
-          <SourceChip
-            key={`${item.label}-${item.detail}-${index}`}
-            detail={item.detail}
-          />
-        ))}
-      </div>
+    <div className="flex flex-col gap-2 animate-in fade-in-0 duration-300">
+      <SkeletonLine width="w-2/5" />
+      <SkeletonLine width="w-full" />
+      <SkeletonLine width="w-[88%]" />
+      <SkeletonLine width="w-3/5" />
     </div>
   );
 }
 
-function ReasoningCard({
+function SkeletonLine({ width }: { width: string }) {
+  return (
+    <div className={cn("h-3 animate-pulse rounded-full bg-muted/70", width)} />
+  );
+}
+
+function ChatMessage({
   label,
   detail,
   live = false,
@@ -515,29 +511,36 @@ function ReasoningCard({
   live?: boolean;
 }) {
   return (
-    <div className="animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
-      <div
+    <div className="flex flex-col gap-1 animate-in fade-in-0 slide-in-from-bottom-1 duration-300">
+      <span
         className={cn(
-          "border-l border-border/80 pl-4",
-          live && "border-primary/60",
+          "text-sm font-semibold",
+          live ? "text-primary" : "text-foreground",
         )}
       >
-        <div
-          className={cn(
-            "mb-2 inline-flex items-center gap-2 rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium tracking-wide text-muted-foreground",
-            live && "bg-primary/10 text-primary",
-          )}
-        >
-          {live ? <SquareTerminalIcon className="size-3" /> : null}
-          {formatReasoningLabel(label)}
-        </div>
-        <MarkdownText
-          text={detail}
-          className={cn(
-            "text-[15px] leading-7 text-foreground/90",
-            live && "animate-in fade-in-0 duration-200",
-          )}
-        />
+        {formatReasoningLabel(label)}
+      </span>
+      <MarkdownText
+        text={detail}
+        className="text-[15px] leading-7 text-foreground/85"
+      />
+    </div>
+  );
+}
+
+function SourcesSurface({ items }: { items: ActivityPayloadItem[] }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        Sources
+      </span>
+      <div className="grid grid-cols-2 gap-2 xl:grid-cols-3">
+        {items.map((item, index) => (
+          <SourceChip
+            key={`${item.label}-${item.detail}-${index}`}
+            detail={item.detail}
+          />
+        ))}
       </div>
     </div>
   );
@@ -556,26 +559,6 @@ function SourceChip({ detail }: { detail: string }) {
         {title || detail}
       </p>
     </div>
-  );
-}
-
-function ThinkingSkeleton({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className="border-l border-border/60 pl-4">
-      <div className="mb-3 h-3 w-32 animate-pulse rounded-full bg-muted/70" />
-      <div className={cn("space-y-2", compact && "space-y-1.5")}>
-        <SkeletonLine width="w-2/5" />
-        <SkeletonLine width="w-full" />
-        <SkeletonLine width="w-[88%]" />
-        <SkeletonLine width="w-3/5" />
-      </div>
-    </div>
-  );
-}
-
-function SkeletonLine({ width }: { width: string }) {
-  return (
-    <div className={cn("h-3 animate-pulse rounded-full bg-muted/70", width)} />
   );
 }
 
@@ -609,10 +592,27 @@ function MarkdownText({
 }
 
 function renderMarkdown(input: string) {
-  const escaped = escapeHtml(input).replace(/\r/g, "");
+  const mathPlaceholders: string[] = [];
+
+  const withMathPlaceholders = input
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_, expr) => {
+      const html = renderMathSafe(expr, true);
+      mathPlaceholders.push(html);
+      return `@@MATH_BLOCK_${mathPlaceholders.length - 1}@@`;
+    })
+    .replace(/(^|[^\\$])\$([^$\n]+?)\$/g, (match, prefix, expr) => {
+      if (!/[\\^_{}]/.test(expr)) {
+        return match;
+      }
+      const html = renderMathSafe(expr, false);
+      mathPlaceholders.push(html);
+      return `${prefix}@@MATH_INLINE_${mathPlaceholders.length - 1}@@`;
+    });
+
+  const escaped = escapeHtml(withMathPlaceholders).replace(/\r/g, "");
   const blocks = escaped.split(/\n{2,}/).filter(Boolean);
 
-  return blocks
+  const rendered = blocks
     .map((block) => {
       if (/^```/.test(block.trim())) {
         const code = block
@@ -686,6 +686,28 @@ function renderMarkdown(input: string) {
       return `<p>${html}</p>`;
     })
     .join("");
+
+  return rendered
+    .replace(
+      /@@MATH_BLOCK_(\d+)@@/g,
+      (_, index) => mathPlaceholders[Number(index)] ?? "",
+    )
+    .replace(
+      /@@MATH_INLINE_(\d+)@@/g,
+      (_, index) => mathPlaceholders[Number(index)] ?? "",
+    );
+}
+
+function renderMathSafe(expr: string, displayMode: boolean) {
+  try {
+    return katex.renderToString(expr.trim(), {
+      displayMode,
+      throwOnError: false,
+      output: "html",
+    });
+  } catch {
+    return escapeHtml(expr);
+  }
 }
 
 function renderInlineMarkdown(input: string) {

@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Star } from "lucide-react";
+import { ArrowLeft, Star } from "lucide-react";
 import { toast } from "sonner";
 import { rateTemplate, saveTemplate } from "./server";
 
@@ -66,10 +66,20 @@ export function TemplateReadyView({
 
   return (
     <div
-      className="grid min-h-svh lg:grid-cols-2"
+      className="relative grid h-svh lg:grid-cols-2"
       data-template-id={templateId}
     >
-      <div className="relative bg-muted">
+      <Button
+        size="sm"
+        variant="secondary"
+        className="absolute right-4 top-4 z-10 gap-1.5 shadow-sm"
+        onClick={() => router.push("/dashboard")}
+      >
+        <ArrowLeft className="size-4" />
+        Back Home
+      </Button>
+
+      <div className="relative h-svh bg-muted max-lg:h-[45vh]">
         {previewImageUrl ? (
           <img
             src={previewImageUrl}
@@ -83,40 +93,49 @@ export function TemplateReadyView({
         )}
       </div>
 
-      <div className="flex flex-col">
-        <div className="flex-1 overflow-y-auto p-6 md:p-10">
-          <div className="flex max-w-md flex-col gap-6">
-            <h1 className="font-heading text-2xl font-bold">{name}</h1>
+      <div className="flex h-svh flex-col max-lg:h-auto">
+        <div className="flex flex-col gap-4 px-6 pb-4 pt-6 md:px-10 md:pt-10">
+          <h1 className="font-heading text-2xl font-bold">{name}</h1>
 
-            {products.length > 0 ? (
-              <div className="grid grid-cols-2 gap-3">
-                {products.map((product) => (
-                  <Card key={product.id} size="sm" className="gap-0 py-0">
-                    <div className="aspect-square bg-muted" />
-                    <Separator />
-                    <CardContent className="py-3 text-center">
-                      <p className="text-sm font-medium">{product.name}</p>
-                      <p className="text-sm text-muted-foreground">
+          {products.length > 0 ? (
+            <div className="grid grid-cols-2 gap-2">
+              {products.map((product) => (
+                <a
+                  key={product.id}
+                  href={`https://www.google.com/search?q=${encodeURIComponent(product.name)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block"
+                >
+                  <Card
+                    size="sm"
+                    className="gap-0 py-3 px-3 transition hover:border-foreground/40 hover:shadow-sm"
+                  >
+                    <CardContent className="flex items-center justify-between gap-2 px-0">
+                      <p className="text-sm font-medium line-clamp-2">
+                        {product.name}
+                      </p>
+                      <p className="shrink-0 text-sm text-muted-foreground">
                         {product.price}
                       </p>
                     </CardContent>
                   </Card>
-                ))}
-              </div>
-            ) : null}
-
-            {steps.length > 0 ? (
-              <div className="flex flex-col gap-2">
-                <p className="text-base font-medium">to do this you do:</p>
-                <ol className="list-decimal space-y-1 pl-5 text-sm">
-                  {steps.map((step, i) => (
-                    <li key={i}>{step}</li>
-                  ))}
-                </ol>
-              </div>
-            ) : null}
-          </div>
+                </a>
+              ))}
+            </div>
+          ) : null}
         </div>
+
+        {steps.length > 0 ? (
+          <div className="flex min-h-0 flex-1 flex-col gap-2 border-t border-border/60 px-6 py-4 md:px-10">
+            <p className="text-base font-medium">To do this you do:</p>
+            <ol className="list-decimal space-y-1 overflow-y-auto pl-5 text-sm">
+              {steps.map((step, i) => (
+                <li key={i}>{step}</li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
 
         <Separator />
 
@@ -137,18 +156,14 @@ export function TemplateReadyView({
                       "size-5",
                       i < rating
                         ? "fill-yellow-400 text-yellow-400"
-                        : "fill-muted text-muted"
+                        : "fill-muted text-muted",
                     )}
                   />
                 </button>
               ))}
             </div>
           </div>
-          <Button
-            variant="outline"
-            onClick={handleSave}
-            disabled={isPending}
-          >
+          <Button variant="outline" onClick={handleSave} disabled={isPending}>
             {isPending ? "Saving..." : "Save"}
           </Button>
         </div>

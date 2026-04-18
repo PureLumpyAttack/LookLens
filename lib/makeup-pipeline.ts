@@ -544,19 +544,7 @@ async function researchLook(
   rebuttalNotes: string[] = [],
   callbacks: StreamCallbacks = {},
 ): Promise<ModelRunResult<ResearchResult>> {
-  const contents = [
-    {
-      role: "user",
-      parts: [
-        {
-          text: buildResearchPrompt(context.budgetCad, rebuttalNotes),
-        },
-        await imagePartFromUrl(context.referencePhotoUrl),
-      ],
-    },
-  ];
-
-  const response = await ai.models.generateContentStream({
+  const groundedResponse = await ai.models.generateContentStream({
     model: "gemma-4-31b-it",
     config: {
       tools: textTools,
@@ -565,11 +553,28 @@ async function researchLook(
         thinkingLevel: "HIGH",
       },
     } as never,
-    contents,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: buildResearchPrompt(context.budgetCad, rebuttalNotes) },
+          { text: "Reference look (what to recreate):" },
+          await imagePartFromUrl(context.referencePhotoUrl),
+          { text: "User's face photo (who will wear the makeup):" },
+          await imagePartFromUrl(context.userFacePhotoUrl),
+        ],
+      },
+    ],
   });
 
-  const streamed = await readTextAndThoughtStream(response, callbacks);
-  const parsed = parseJsonWithSchema(streamed.answerText, researchResultSchema);
+  const streamed = await readTextAndThoughtStream(groundedResponse, callbacks);
+
+  const parsed = await formatStructuredJson(
+    ai,
+    buildResearchFormatterPrompt(streamed.answerText, context.budgetCad),
+    researchResponseSchema,
+    researchResultSchema,
+  );
 
   return {
     thoughts: splitThoughtSummaries(streamed.thoughtText),
@@ -597,45 +602,8 @@ async function rebuttalLook(
   round: number,
   callbacks: StreamCallbacks = {},
 ): Promise<ModelRunResult<RebuttalResult>> {
-  const contents = [
-    {
-      role: "user",
-      parts: [
-        {
-          text: buildRebuttalPrompt(context.budgetCad, research, round),
-        },
-        await imagePartFromUrl(context.referencePhotoUrl),
-      ],
-    },
-  ];
-
-  const response = await ai.models.generateContentStream({
+  const groundedResponse = await ai.models.generateContentStream({
     model: "gemini-3-flash-preview",
-    config: {
-      tools: textTools,
-      thinkingConfig: {
-        includeThoughts: true,
-        thinkingLevel: "HIGH",
-      },
-    } as never,
-    contents,
-  });
-
-  const streamed = await readTextAndThoughtStream(response, callbacks);
-
-  return {
-    thoughts: splitThoughtSummaries(streamed.thoughtText),
-    result: parseJsonWithSchema(streamed.answerText, rebuttalResultSchema),
-  };
-}
-
-async function createInstructions(
-  ai: GoogleGenAIClient,
-  research: ResearchResult,
-  callbacks: StreamCallbacks = {},
-): Promise<ModelRunResult<InstructionsResult>> {
-  const response = await ai.models.generateContentStream({
-    model: "gemma-4-31b-it",
     config: {
       tools: textTools,
       thinkingConfig: {
@@ -647,10 +615,50 @@ async function createInstructions(
       {
         role: "user",
         parts: [
-          {
-            text: buildInstructionsPrompt(research),
-          },
+          { text: buildRebuttalPrompt(context.budgetCad, research, round) },
+          { text: "Reference look (what to recreate):" },
+          await imagePartFromUrl(context.referencePhotoUrl),
+          { text: "User's face photo (who will wear the makeup):" },
+          await imagePartFromUrl(context.userFacePhotoUrl),
         ],
+      },
+    ],
+  });
+
+  const streamed = await readTextAndThoughtStream(groundedResponse, callbacks);
+
+  const parsed = await formatStructuredJson(
+    ai,
+    buildRebuttalFormatterPrompt(streamed.answerText),
+    rebuttalResponseSchema,
+    rebuttalResultSchema,
+  );
+
+  return {
+    thoughts: splitThoughtSummaries(streamed.thoughtText),
+    result: parsed,
+  };
+}
+
+async function createInstructions(
+  ai: GoogleGenAIClient,
+  research: ResearchResult,
+  callbacks: StreamCallbacks = {},
+): Promise<ModelRunResult<InstructionsResult>> {
+  const response = await ai.models.generateContentStream({
+    model: "gemma-4-31b-it",
+    config: {
+      responseMimeType: "application/json",
+      responseSchema: instructionsResponseSchema,
+      thinkingConfig: {
+        includeThoughts: true,
+        thinkingLevel: "HIGH",
+      },
+    } as never,
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: buildInstructionsPrompt(research) }],
       },
     ],
   });
@@ -661,6 +669,33 @@ async function createInstructions(
     thoughts: splitThoughtSummaries(streamed.thoughtText),
     result: parseJsonWithSchema(streamed.answerText, instructionsResultSchema),
   };
+}
+
+async function formatStructuredJson<T>(
+  ai: GoogleGenAIClient,
+  prompt: string,
+  responseSchema: unknown,
+  zodSchema: z.ZodType<T>,
+): Promise<T> {
+  const response = await ai.models.generateContentStream({
+    model: "gemma-4-31b-it",
+    config: {
+      responseMimeType: "application/json",
+      responseSchema,
+      thinkingConfig: {
+        thinkingLevel: "MINIMAL",
+      },
+    } as never,
+    contents: [
+      {
+        role: "user",
+        parts: [{ text: prompt }],
+      },
+    ],
+  });
+
+  const streamed = await readTextAndThoughtStream(response);
+  return parseJsonWithSchema(streamed.answerText, zodSchema);
 }
 
 async function createPreviewImage({
@@ -861,41 +896,40 @@ function buildRebuttalPayload(
 function buildResearchPrompt(budgetCad: number, rebuttalNotes: string[]) {
   return [
     "You are the main research agent in a makeup analysis pipeline.",
-    "Use Google Search grounding to identify every visible makeup product in the attached reference image and recommend the strongest budget-conscious dupes available in Canada.",
+    "You will receive TWO images: (1) a reference look to recreate, and (2) the user's own face photo.",
+    "Adapt shade recommendations to the user's skin tone, undertone, and features visible in their face photo — do not blindly copy the reference model's shades if they wouldn't suit the user.",
+    "Use Google Search grounding to identify every visible makeup product in the reference image and recommend the strongest budget-conscious dupes available in Canada that flatter the user.",
     `The total budget cap is $${budgetCad.toFixed(2)} CAD.`,
     "Prioritize affordable, high-quality products from brands like e.l.f., NYX, Maybelline, L'Oreal, Wet n Wild, Essence, Milani, and similar accessible options.",
-    "Return ONLY valid JSON with this exact shape:",
-    "{",
-    '  "lookName": "string",',
-    '  "rationaleSummary": "string",',
-    '  "totalEstimatedCostCad": 0,',
-    '  "products": [',
-    "    {",
-    '      "category": "lips | cheeks | eyes | skin | highlight | brows | lashes",',
-    '      "originalProductName": "string",',
-    '      "originalBrand": "string",',
-    '      "shadeDescription": "string",',
-    '      "dupeBrand": "string",',
-    '      "dupeProductName": "string",',
-    '      "dupePriceCad": 0,',
-    '      "whereToBuy": "string",',
-    '      "qualityScore": 1,',
-    '      "confidence": "high | medium | low"',
-    "    }",
-    "  ]",
-    "}",
+    "Write a detailed research report in markdown. For EACH dupe product, include:",
+    "- category (lips | cheeks | eyes | skin | highlight | brows | lashes)",
+    "- the original/inspiration product name + brand + shade",
+    "- the dupe product name + brand + realistic Canadian price",
+    "- the retailer name (whereToBuy)",
+    "- quality score (1-10) and confidence (high | medium | low)",
+    "Also give the look a lookName and a short rationale.",
     "Rules:",
     "- Identify all major visible makeup categories needed to recreate the look.",
     "- Keep the total estimated cost within the budget if reasonably possible.",
     "- Prefer grounded, real products and realistic Canadian pricing.",
     "- The dupe set should feel balanced across the total budget rather than overspending on one category.",
-    "- If there is uncertainty, make the best grounded estimate and lower confidence.",
     rebuttalNotes.length > 0
       ? `Address these rebuttal concerns explicitly: ${rebuttalNotes.join(" ")}`
       : "",
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function buildResearchFormatterPrompt(freeText: string, budgetCad: number) {
+  return [
+    "Convert the following makeup research report into the structured JSON shape described by the response schema.",
+    `Budget cap: $${budgetCad.toFixed(2)} CAD.`,
+    "If totalEstimatedCostCad is not explicitly stated, set it to 0 and the caller will recompute from products.",
+    "",
+    "Research report:",
+    freeText,
+  ].join("\n");
 }
 
 function buildRebuttalPrompt(
@@ -905,47 +939,35 @@ function buildRebuttalPrompt(
 ) {
   return [
     "You are the adversarial / rebuttal agent in a makeup pipeline.",
-    "Use Google Search grounding to audit the attached reference image and the proposed research result.",
+    "You will receive TWO images: (1) the reference look, and (2) the user's own face photo.",
+    "Use Google Search grounding to audit the proposed research result against BOTH images.",
     `This is rebuttal round ${round}.`,
     `Budget cap: $${budgetCad.toFixed(2)} CAD.`,
     "Check for:",
     "- unsafe or irritating product suggestions",
     "- unrealistic pricing or availability",
     "- mismatched categories or shades",
+    "- shades that would clash with the user's skin tone / undertone / features",
     "- missing products required to recreate the look",
-    "Return ONLY valid JSON with this exact shape:",
-    "{",
-    '  "hasRebuttal": true,',
-    '  "verdict": "string",',
-    '  "concerns": [',
-    "    {",
-    '      "type": "health | cost | accuracy | missing",',
-    '      "summary": "string",',
-    '      "recommendation": "string"',
-    "    }",
-    "  ]",
-    "}",
-    "If the research looks good, set hasRebuttal to false and concerns to an empty array.",
+    "Write your audit as a short markdown report. State whether there is a material rebuttal, a one-sentence verdict, and list any concerns (type, summary, recommendation).",
     `Research result JSON:\n${JSON.stringify(research, null, 2)}`,
+  ].join("\n");
+}
+
+function buildRebuttalFormatterPrompt(freeText: string) {
+  return [
+    "Convert the following audit report into the structured JSON shape described by the response schema.",
+    "If no material concerns are raised, set hasRebuttal to false and concerns to an empty array.",
+    "",
+    "Audit report:",
+    freeText,
   ].join("\n");
 }
 
 function buildInstructionsPrompt(research: ResearchResult) {
   return [
-    "You are a professional makeup artist writing beginner-friendly steps.",
-    "Use Google Search grounding only if needed for technique verification.",
-    "Return ONLY valid JSON with this exact shape:",
-    "{",
-    '  "steps": [',
-    "    {",
-    '      "order": 1,',
-    '      "productName": "string",',
-    '      "tool": "string",',
-    '      "technique": "string",',
-    '      "blendingTip": "string"',
-    "    }",
-    "  ]",
-    "}",
+    "You are a professional makeup artist writing beginner-friendly application steps.",
+    "Return structured JSON matching the provided response schema.",
     "Rules:",
     "- Order steps correctly: skincare/base -> eyes -> cheeks -> lips.",
     "- For each step include the product name, tool, technique, and one blending tip.",
@@ -953,6 +975,91 @@ function buildInstructionsPrompt(research: ResearchResult) {
     `Products JSON:\n${JSON.stringify(research.products, null, 2)}`,
   ].join("\n");
 }
+
+const researchResponseSchema = {
+  type: "object",
+  required: ["lookName", "rationaleSummary", "totalEstimatedCostCad", "products"],
+  properties: {
+    lookName: { type: "string" },
+    rationaleSummary: { type: "string" },
+    totalEstimatedCostCad: { type: "number" },
+    products: {
+      type: "array",
+      items: {
+        type: "object",
+        required: [
+          "category",
+          "originalProductName",
+          "originalBrand",
+          "shadeDescription",
+          "dupeBrand",
+          "dupeProductName",
+          "dupePriceCad",
+          "whereToBuy",
+          "qualityScore",
+          "confidence",
+        ],
+        properties: {
+          category: { type: "string" },
+          originalProductName: { type: "string" },
+          originalBrand: { type: "string" },
+          shadeDescription: { type: "string" },
+          dupeBrand: { type: "string" },
+          dupeProductName: { type: "string" },
+          dupePriceCad: { type: "number" },
+          whereToBuy: { type: "string" },
+          qualityScore: { type: "number" },
+          confidence: { type: "string", enum: ["high", "medium", "low"] },
+        },
+      },
+    },
+  },
+};
+
+const rebuttalResponseSchema = {
+  type: "object",
+  required: ["hasRebuttal", "verdict", "concerns"],
+  properties: {
+    hasRebuttal: { type: "boolean" },
+    verdict: { type: "string" },
+    concerns: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["type", "summary", "recommendation"],
+        properties: {
+          type: {
+            type: "string",
+            enum: ["health", "cost", "accuracy", "missing"],
+          },
+          summary: { type: "string" },
+          recommendation: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
+const instructionsResponseSchema = {
+  type: "object",
+  required: ["steps"],
+  properties: {
+    steps: {
+      type: "array",
+      items: {
+        type: "object",
+        required: ["order", "productName", "tool", "technique", "blendingTip"],
+        properties: {
+          order: { type: "integer" },
+          productName: { type: "string" },
+          tool: { type: "string" },
+          technique: { type: "string" },
+          blendingTip: { type: "string" },
+        },
+      },
+    },
+  },
+};
 
 function buildPreviewPrompt(products: ResearchProduct[]) {
   const productLines = products
@@ -1190,7 +1297,7 @@ function splitThoughtSummaries(thoughtText: string) {
     return [];
   }
 
-  return thoughtText
+  const chunks = thoughtText
     .split(/\n\s*\n+/)
     .map((section) =>
       section
@@ -1198,8 +1305,26 @@ function splitThoughtSummaries(thoughtText: string) {
         .replace(/\n{3,}/g, "\n\n")
         .trim(),
     )
-    .filter(Boolean)
-    .slice(0, 6);
+    .filter(Boolean);
+
+  const merged: string[] = [];
+
+  for (let i = 0; i < chunks.length; i += 1) {
+    const current = chunks[i];
+    const isHeading =
+      /^\*\*[^*\n]+\*\*\.?$/.test(current) ||
+      /^#{1,6}\s+\S.*$/.test(current) ||
+      (!current.includes("\n") && current.length <= 80);
+
+    if (isHeading && i + 1 < chunks.length) {
+      merged.push(`${current}\n\n${chunks[i + 1]}`);
+      i += 1;
+    } else {
+      merged.push(current);
+    }
+  }
+
+  return merged.slice(0, 6);
 }
 
 function formatThoughtPayload(

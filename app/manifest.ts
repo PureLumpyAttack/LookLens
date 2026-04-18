@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "LookLens",
     short_name: "LookLens",
     description: "Placeholder",
-    start_url: "/",
+    start_url: "/dashboard",
     scope: "/",
     display: "standalone",
     orientation: "portrait",

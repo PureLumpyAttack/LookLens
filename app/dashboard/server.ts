@@ -130,6 +130,36 @@ export async function createProcessingTemplate({
   }
 }
 
+export async function renameSavedTemplate({
+  templateId,
+  name,
+}: {
+  templateId: string;
+  name: string;
+}) {
+  const { userId } = await auth();
+
+  if (!userId) {
+    throw new Error("Unauthorized");
+  }
+
+  const trimmed = name.trim().slice(0, 200);
+
+  if (!trimmed) {
+    throw new Error("Name can't be empty");
+  }
+
+  await db
+    .update(makeupTemplates)
+    .set({ name: trimmed })
+    .where(
+      and(
+        eq(makeupTemplates.id, templateId),
+        eq(makeupTemplates.ownerId, userId),
+      ),
+    );
+}
+
 export async function deleteSavedTemplate({ templateId }: { templateId: string }) {
   const { userId } = await auth();
 

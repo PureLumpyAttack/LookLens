@@ -3,6 +3,7 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@uploadthing/react/styles.css";
+@import "katex/dist/katex.min.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -129,4 +130,41 @@
   html {
     @apply font-sans;
   }
+}
+
+@keyframes shutter-flash {
+  0% {
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes shutter-capture {
+  0% {
+    opacity: 0;
+    transform: scale(1.15);
+    filter: blur(8px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.animate-shutter-flash {
+  animation: shutter-flash 360ms ease-out forwards;
+}
+
+.animate-shutter-capture {
+  animation: shutter-capture 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }

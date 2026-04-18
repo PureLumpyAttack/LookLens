@@ -8,12 +8,14 @@ import { RawCamera } from "@/components/raw-camera";
 import {
   AlertDialog,
   AlertDialogAction,
+  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
 import { UserButton, useUser } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -46,7 +48,11 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { uploadFiles } from "@/lib/uploadthing";
 import { toast } from "sonner";
-import { createProcessingTemplate, deleteSavedTemplate } from "./server";
+import {
+  createProcessingTemplate,
+  deleteSavedTemplate,
+  renameSavedTemplate,
+} from "./server";
 import type { SavedMakeupView } from "./data";
 
 function dataUrlToFile(dataUrl: string, fileName: string) {
@@ -98,19 +104,79 @@ export default function DashboardPage({
     string | null
   >(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFlashing, setIsFlashing] = useState(false);
+
+  const triggerShutterFlash = () => {
+    setIsFlashing(false);
+    requestAnimationFrame(() => {
+      setIsFlashing(true);
+      window.setTimeout(() => setIsFlashing(false), 360);
+    });
+  };
 
   const { user } = useUser();
   const isMobile = useIsMobile();
   const router = useRouter();
 
-  const handleDeleteMakeup = async (templateId: string) => {
+  const [deleteTarget, setDeleteTarget] = useState<SavedMakeupView | null>(
+    null,
+  );
+  const [renameTarget, setRenameTarget] = useState<SavedMakeupView | null>(
+    null,
+  );
+  const [productsTarget, setProductsTarget] = useState<SavedMakeupView | null>(
+    null,
+  );
+  const [renameValue, setRenameValue] = useState("");
+  const [isMutating, setIsMutating] = useState(false);
+
+  const openRenameDialog = (makeup: SavedMakeupView) => {
+    setRenameTarget(makeup);
+    setRenameValue(makeup.name);
+  };
+
+  const confirmRename = async () => {
+    if (!renameTarget) {
+      return;
+    }
+
+    const trimmed = renameValue.trim();
+
+    if (!trimmed) {
+      toast.error("Name can't be empty.");
+      return;
+    }
+
+    setIsMutating(true);
     try {
-      await deleteSavedTemplate({ templateId });
+      await renameSavedTemplate({ templateId: renameTarget.id, name: trimmed });
+      toast.success("Renamed.");
+      setRenameTarget(null);
+      router.refresh();
+    } catch (error) {
+      console.error(error);
+      toast.error("Couldn't rename this look.");
+    } finally {
+      setIsMutating(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) {
+      return;
+    }
+
+    setIsMutating(true);
+    try {
+      await deleteSavedTemplate({ templateId: deleteTarget.id });
       toast.success("Deleted.");
+      setDeleteTarget(null);
       router.refresh();
     } catch (error) {
       console.error(error);
       toast.error("Couldn't delete this look.");
+    } finally {
+      setIsMutating(false);
     }
   };
 
@@ -152,6 +218,7 @@ export default function DashboardPage({
 
     const file = dataUrlToFile(screenshot, `looklens-camera-${Date.now()}.jpg`);
 
+    triggerShutterFlash();
     setSelectedPhotoFile(file);
     setSelectedPhotoPreview(screenshot);
   };
@@ -258,37 +325,45 @@ export default function DashboardPage({
       </div>
 
       <div className="absolute inset-0 overflow-hidden bg-black">
-        {selectedPhotoPreview ? (
-          <img
-            src={selectedPhotoPreview}
-            alt="Selected makeup reference"
-            className="size-full object-cover"
-          />
-        ) : (
-          <RawCamera
-            ref={cameraRef}
-            key={cameraAttempt}
-            className="size-full object-cover"
-            videoConstraints={isMobile ? { aspectRatio: 9 / 16 } : undefined}
-            onUserMedia={() => {
-              setPermissionDenied(false);
-            }}
-            onUserMediaError={(error) => {
-              if (typeof error === "string") {
-                console.log(error);
-                return;
-              }
+        <RawCamera
+          ref={cameraRef}
+          key={cameraAttempt}
+          className="size-full object-cover"
+          videoConstraints={isMobile ? { aspectRatio: 9 / 16 } : undefined}
+          onUserMedia={() => {
+            setPermissionDenied(false);
+          }}
+          onUserMediaError={(error) => {
+            if (typeof error === "string") {
+              console.log(error);
+              return;
+            }
 
-              if (
-                error.name === "NotAllowedError" ||
-                error.name === "PermissionDeniedError"
-              ) {
-                setPermissionDenied(true);
-              }
-            }}
-          />
-        )}
+            if (
+              error.name === "NotAllowedError" ||
+              error.name === "PermissionDeniedError"
+            ) {
+              setPermissionDenied(true);
+            }
+          }}
+        />
       </div>
+
+      {selectedPhotoPreview ? (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 p-6 pb-40 backdrop-blur-xl animate-in fade-in-0 duration-300">
+          <div className="animate-shutter-capture relative overflow-hidden rounded-3xl border border-white/15 bg-black/50 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)]">
+            <img
+              src={selectedPhotoPreview}
+              alt="Selected makeup reference"
+              className="max-h-[70vh] max-w-[min(90vw,520px)] object-contain"
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {isFlashing ? (
+        <div className="animate-shutter-flash pointer-events-none absolute inset-0 z-100 bg-white" />
+      ) : null}
 
       <div className="absolute bottom-8 z-10 flex w-full items-center justify-center gap-3">
         <div className="flex flex-row gap-4">
@@ -416,7 +491,9 @@ export default function DashboardPage({
                                   <DropdownMenuLabel>
                                     Products
                                   </DropdownMenuLabel>
-                                  <DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    onClick={() => setProductsTarget(makeup)}
+                                  >
                                     <ShoppingCart /> Order Products
                                   </DropdownMenuItem>
                                 </DropdownMenuGroup>
@@ -426,16 +503,14 @@ export default function DashboardPage({
                                     Managing
                                   </DropdownMenuLabel>
                                   <DropdownMenuItem
-                                    onSelect={() => handleOpenMakeup(makeup.id)}
+                                    onClick={() => openRenameDialog(makeup)}
                                   >
                                     <Edit />
                                     Edit
                                   </DropdownMenuItem>
                                   <DropdownMenuItem
                                     variant="destructive"
-                                    onSelect={() =>
-                                      handleDeleteMakeup(makeup.id)
-                                    }
+                                    onClick={() => setDeleteTarget(makeup)}
                                   >
                                     <Trash />
                                     Delete
@@ -454,6 +529,127 @@ export default function DashboardPage({
           </ResponsiveSheet>
         </div>
       </div>
+
+      <AlertDialog
+        open={productsTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setProductsTarget(null);
+        }}
+      >
+        <AlertDialogContent className="sm:max-w-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {productsTarget?.name ?? "Products"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Tap a product to search it on Google.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {productsTarget && productsTarget.products.length > 0 ? (
+            <div className="grid max-h-[60vh] grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
+              {productsTarget.products.map((product, index) => (
+                <a
+                  key={`${product.name}-${index}`}
+                  href={`https://www.google.com/search?q=${encodeURIComponent(product.name)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="block border rounded-xl"
+                >
+                  <Card
+                    size="sm"
+                    className="gap-0 py-3 px-3 transition hover:border-foreground/40 hover:shadow-sm"
+                  >
+                    <CardContent className="flex items-center justify-between gap-2 px-0">
+                      <p className="text-sm font-medium line-clamp-2">
+                        {product.name}
+                      </p>
+                      <p className="shrink-0 text-sm text-muted-foreground">
+                        {product.price}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </a>
+              ))}
+            </div>
+          ) : (
+            <p className="py-6 text-center text-sm text-muted-foreground">
+              No products saved for this look.
+            </p>
+          )}
+
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setProductsTarget(null)}>
+              Close
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={renameTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRenameTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Rename look</AlertDialogTitle>
+            <AlertDialogDescription>
+              Give this saved look a new name.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Input
+            value={renameValue}
+            onChange={(event) => setRenameValue(event.target.value)}
+            placeholder="Look name"
+            autoFocus
+            disabled={isMutating}
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isMutating}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                confirmRename();
+              }}
+              disabled={isMutating || !renameValue.trim()}
+            >
+              {isMutating ? "Saving..." : "Save"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this look?</AlertDialogTitle>
+            <AlertDialogDescription className={"text-left"}>
+              &ldquo;{deleteTarget?.name}&rdquo; will be removed from your saved
+              looks. This can&apos;t be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isMutating}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                confirmDelete();
+              }}
+              disabled={isMutating}
+              variant={"destructive"}
+            >
+              {isMutating ? "Deleting..." : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   );
 }
