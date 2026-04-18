@@ -1,4 +1,7 @@
 import type { Metadata, Viewport } from "next";
+import { ClerkProvider } from "@clerk/nextjs";
+import { dark } from "@clerk/ui/themes";
+
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import "./globals.css";
 import { ServiceWorkerRegistrar } from "./(pwa)/service-worker-registrar";
@@ -60,8 +63,16 @@ export default function RootLayout({
       )}
     >
       <body className="min-h-full flex flex-col">
-        {children}
-        <ServiceWorkerRegistrar />
+        <ClerkProvider
+          afterSignOutUrl="/"
+          appearance={{
+            cssLayerName: "clerk",
+            theme: dark,
+          }}
+        >
+          {children}
+          <ServiceWorkerRegistrar />
+        </ClerkProvider>
       </body>
     </html>
   );

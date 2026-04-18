@@ -1,5 +1,6 @@
 "use client";
 
+import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import { useState } from "react";
 
 const features = [
@@ -100,12 +101,21 @@ export default function Home() {
             </ul>
           </div>
           <div className="flex items-center gap-2">
-            <button className="text-xs font-medium text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 px-3 py-1.5 rounded-md transition-colors">
-              Sign up
-            </button>
-            <button className="text-xs font-medium text-zinc-950 bg-zinc-50 hover:bg-zinc-200 px-4 py-1.5 rounded-md transition-colors h-8">
-              Get early access
-            </button>
+            <Show when="signed-out">
+              <SignInButton>
+                <button className="text-xs font-medium text-zinc-400 hover:text-zinc-50 hover:bg-zinc-800 px-3 py-1.5 rounded-md transition-colors">
+                  Sign in
+                </button>
+              </SignInButton>
+              <SignUpButton>
+                <button className="text-xs font-medium text-zinc-950 bg-zinc-50 hover:bg-zinc-200 px-4 py-1.5 rounded-md transition-colors h-8">
+                  Sign up
+                </button>
+              </SignUpButton>
+            </Show>
+            <Show when="signed-in">
+              <UserButton />
+            </Show>
           </div>
         </div>
       </nav>
@@ -122,9 +132,11 @@ export default function Home() {
           product, find dupes, and shop within your budget.
         </p>
         <div className="flex gap-3 justify-center flex-wrap mb-16">
-          <button className="text-sm font-medium text-zinc-950 bg-zinc-50 hover:bg-zinc-200 px-5 py-2.5 rounded-lg transition-colors h-10">
-            Get started free →
-          </button>
+          <SignUpButton>
+            <button className="text-sm font-medium text-zinc-950 bg-zinc-50 hover:bg-zinc-200 px-5 py-2.5 rounded-lg transition-colors h-10">
+              Get started free →
+            </button>
+          </SignUpButton>
           <button className="text-sm font-medium text-zinc-50 bg-transparent border border-zinc-700 hover:bg-zinc-800 px-5 py-2.5 rounded-lg transition-colors h-10">
             See how it works
           </button>
