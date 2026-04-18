@@ -76,7 +76,7 @@ export default function RootLayout({
         >
           <NextSSRPlugin routerConfig={extractRouterConfig(fileRouter)} />
           {children}
-          <Toaster />
+          <Toaster position="top-center" />
           <ServiceWorkerRegistrar />
         </ClerkProvider>
       </body>
