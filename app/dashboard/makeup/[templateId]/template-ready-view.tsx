@@ -129,6 +129,10 @@ export function TemplateReadyView({
         {steps.length > 0 ? (
           <div className="flex min-h-0 flex-1 flex-col gap-2 border-t border-border/60 px-6 py-4 md:px-10">
             <p className="text-base font-medium">To do this you do:</p>
+            <p className="text-muted-foreground text-xs mb-2.5">
+              AI results can make mistakes. Revalidate before following advice.
+            </p>
+
             <ol className="list-decimal space-y-1 overflow-y-auto pl-5 text-sm">
               {steps.map((step, i) => (
                 <li key={i}>{step}</li>
