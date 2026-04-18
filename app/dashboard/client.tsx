@@ -82,7 +82,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <main className="relative min-h-[100dvh] overflow-hidden bg-black">
+    <main className="relative min-h-dvh overflow-hidden bg-black">
       {permissionDenied && (
         <AlertDialog open>
           <AlertDialogContent>
