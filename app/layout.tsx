@@ -1,10 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/ui/themes";
+import { NextSSRPlugin } from "@uploadthing/react/next-ssr-plugin";
+import { extractRouterConfig } from "uploadthing/server";
 
 import { Geist, Geist_Mono, Inter } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
+import { fileRouter } from "@/app/api/uploadthing/core";
 import { ServiceWorkerRegistrar } from "./(pwa)/service-worker-registrar";
 import { cn } from "@/lib/utils";
 
@@ -71,6 +74,7 @@ export default function RootLayout({
             theme: dark,
           }}
         >
+          <NextSSRPlugin routerConfig={extractRouterConfig(fileRouter)} />
           {children}
           <Toaster />
           <ServiceWorkerRegistrar />
