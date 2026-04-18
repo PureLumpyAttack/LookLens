@@ -3,6 +3,7 @@ import { ClerkProvider } from "@clerk/nextjs";
 import { dark } from "@clerk/ui/themes";
 
 import { Geist, Geist_Mono, Inter } from "next/font/google";
+import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 import { ServiceWorkerRegistrar } from "./(pwa)/service-worker-registrar";
 import { cn } from "@/lib/utils";
@@ -71,6 +72,7 @@ export default function RootLayout({
           }}
         >
           {children}
+          <Toaster />
           <ServiceWorkerRegistrar />
         </ClerkProvider>
       </body>
